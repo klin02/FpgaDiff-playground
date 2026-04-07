@@ -7,7 +7,7 @@
 - `node004` 和 `open103` 共享 `/nfs`
 - `fpga` 是 FPGA 上位机，不共享 `/nfs`
 - NFS 仓库路径是 `/nfs/home/youkunlin/workspace/FpgaDiff-playground`
-- `fpga` 上位机仓库路径是 `/home/youkunlin/FpgaDiff-playground`
+- `fpga` 上位机仓库路径是 `/home/fpga-v/youkunlin/FpgaDiff-playground`
 
 下面以 XiangShan 为例。NutShell 时把设计参数换成 `nutshell`。
 
@@ -112,7 +112,7 @@ build/build-log/workload-linux-hello-YYYYmmdd-HHMMSS.log
 ```sh
 cd /nfs/home/youkunlin/workspace/FpgaDiff-playground
 export NEMU_CONFIG=riscv64-xs-ref-novec-nopmppma_defconfig
-export FPGA_ROOT=/home/youkunlin/FpgaDiff-playground
+export FPGA_ROOT=/home/fpga-v/youkunlin/FpgaDiff-playground
 export BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
 
 ssh fpga "mkdir -p $FPGA_ROOT/bitstream $FPGA_ROOT/ready-to-run"
@@ -125,12 +125,12 @@ rsync -a --delete ready-to-run/ fpga:$FPGA_ROOT/ready-to-run/
 同步后远端关键路径为：
 
 ```text
-/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/$XS_RELEASE_NAME
-/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.bit
-/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.ltx
-/home/youkunlin/FpgaDiff-playground/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so
-/home/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.bin
-/home/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.txt
+/home/fpga-v/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/$XS_RELEASE_NAME
+/home/fpga-v/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.bit
+/home/fpga-v/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.ltx
+/home/fpga-v/youkunlin/FpgaDiff-playground/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so
+/home/fpga-v/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.bin
+/home/fpga-v/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.txt
 ```
 
 ## 5. 在 fpga 上烧写、写 DDR、运行 host
@@ -140,7 +140,7 @@ rsync -a --delete ready-to-run/ fpga:$FPGA_ROOT/ready-to-run/
 ```sh
 cd /nfs/home/youkunlin/workspace/FpgaDiff-playground
 
-export FPGA_ROOT=/home/youkunlin/FpgaDiff-playground
+export FPGA_ROOT=/home/fpga-v/youkunlin/FpgaDiff-playground
 export BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
 export BIT_ROOT=$FPGA_ROOT/bitstream/$BIT_TAG
 export XS_RELEASE_NAME=$(cat build/release/latest-xiangshan.name)
@@ -155,7 +155,7 @@ make write_jtag_ddr \
   REMOTE=fpga \
   REMOTE_DIR=$FPGA_ROOT \
   FPGA_BIT_HOME=$BIT_ROOT \
-  DDR_WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello/linux-hello.txt
+  WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello/linux-hello.txt
 
 make reset_cpu \
   REMOTE=fpga \
@@ -173,8 +173,8 @@ make run_host \
   HOST_ARGS="--diff $FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so -i $FPGA_ROOT/ready-to-run/linux-hello/linux-hello.bin"
 ```
 
-日志默认写到远端：
+日志默认写到本地：
 
 ```text
-/home/youkunlin/FpgaDiff-playground/build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log
+build/run-log/run-YYYYmmdd-HHMMSS.log
 ```

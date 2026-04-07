@@ -201,7 +201,7 @@ target 名称与 `env-scripts/fpga_diff/Makefile` 保持一致：
 
 ```sh
 make write_bitstream FPGA_BIT_HOME=/path/to/bitstream-dir
-make write_jtag_ddr FPGA_BIT_HOME=/path/to/bitstream-dir DDR_WORKLOAD=/path/to/workload.txt
+make write_jtag_ddr FPGA_BIT_HOME=/path/to/bitstream-dir WORKLOAD=/path/to/workload.txt
 make reset_cpu FPGA_BIT_HOME=/path/to/bitstream-dir
 ```
 
@@ -221,7 +221,7 @@ make write_jtag_ddr \
   REMOTE=fpga \
   REMOTE_DIR=$REMOTE_ROOT \
   FPGA_BIT_HOME=$BIT_ROOT \
-  DDR_WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello/linux-hello.txt
+  WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello/linux-hello.txt
 ```
 
 `run_host` 也支持 `REMOTE`，默认日志写到远端 `build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log`：
