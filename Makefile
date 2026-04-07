@@ -48,7 +48,8 @@ WORKLOAD_LOG ?= $(BUILD_LOG_DIR)/workload-$(WORKLOAD_TAG)-$(LOG_STAMP).log
 
 NEMU_CONFIG ?= riscv64-xs-ref-novec-nopmppma_defconfig
 NEMU_SO_NAME ?= riscv64-nemu-interpreter-so
-NEMU_OUT_DIR ?= $(BUILD_DIR)/ready-to-run/$(NEMU_CONFIG)
+READY_TO_RUN_DIR ?= $(ROOT_DIR)/ready-to-run
+NEMU_OUT_DIR ?= $(READY_TO_RUN_DIR)/$(NEMU_CONFIG)
 NEMU_OUT_SO ?= $(NEMU_OUT_DIR)/$(NEMU_SO_NAME)
 NEMU_SRC_SO ?= $(NEMU_HOME)/build/$(NEMU_SO_NAME)
 NEMU_LOG ?= $(BUILD_LOG_DIR)/nemu-$(NEMU_CONFIG)-$(LOG_STAMP).log
@@ -56,7 +57,7 @@ NEMU_LOG ?= $(BUILD_LOG_DIR)/nemu-$(NEMU_CONFIG)-$(LOG_STAMP).log
 # Only Vivado/FPGA run-side commands use REMOTE. Other build targets run locally.
 REMOTE ?=
 REMOTE_DIR ?= $(ROOT_DIR)
-REMOTE_ENV ?=
+REMOTE_ENV ?= "source ~/.bash_profile"
 SSH ?= ssh
 
 FPGA_ROOT := $(if $(strip $(REMOTE)),$(REMOTE_DIR),$(ROOT_DIR))
@@ -64,15 +65,18 @@ FPGA_DIFF_HOME := $(FPGA_ROOT)/env-scripts/fpga_diff
 FPGA_BUILD_LOG_DIR ?= $(FPGA_ROOT)/build/build-log
 
 CPU ?= $(if $(filter $(DESIGN),nutshell),nutshell,kmh)
-CORE_DIR ?= $(if $(filter $(DESIGN),nutshell),$(FPGA_ROOT)/NutShell/build,$(FPGA_ROOT)/XiangShan/build)
+BIT_SRC_DIR ?= $(shell cat "$(RELEASE_LATEST_PATH)" 2>/dev/null)
+CORE_DIR ?= $(BIT_SRC_DIR)/build
 CHI_DIR ?=
 PRJ ?= $(FPGA_DIFF_HOME)/fpga_$(CPU)/fpga_$(CPU).xpr
-BITSTREAM_DIR ?= $(FPGA_ROOT)/build/bitstream/$(CPU)
+BIT_ROOT ?= $(FPGA_ROOT)/bitstream
+BIT_TAG ?= $(DESIGN)-$(LOG_STAMP)
+BIT_OUT_DIR ?= $(BIT_ROOT)/$(BIT_TAG)
 BIT_LOG ?= $(FPGA_BUILD_LOG_DIR)/bit-$(CPU)-$(LOG_STAMP).log
 FPGA_BIT_HOME ?=
 DDR_WORKLOAD ?=
 
-define fpga_run
+define remote
 $(if $(strip $(REMOTE)),$(SSH) $(REMOTE) 'cd $(REMOTE_DIR) && $(REMOTE_ENV) $(1)',$(REMOTE_ENV) $(1))
 endef
 
@@ -81,7 +85,10 @@ define require_var
 endef
 
 define require_design
-	@test "$(DESIGN)" = "xiangshan" -o "$(DESIGN)" = "nutshell" || { echo "ERROR: pass design as DESIGN=xiangshan/nutshell or make $@ xiangshan/nutshell"; exit 1; }
+	@test "$(DESIGN)" = "xiangshan" -o "$(DESIGN)" = "nutshell" || { \
+		echo "ERROR: pass design as DESIGN=xiangshan/nutshell or make $@ xiangshan/nutshell"; \
+		exit 1; \
+	}
 endef
 
 define link_one_difftest
@@ -108,28 +115,24 @@ define link_one_difftest
 endef
 
 TARGET ?= linux/hello
-WORKLOAD_MAKE_TARGET ?= $(if $(findstring /,$(TARGET)),$(TARGET),linux/$(TARGET))
-WORKLOAD_TYPE ?= $(if $(findstring /,$(TARGET)),$(firstword $(subst /, ,$(TARGET))),linux)
+WORKLOAD_TYPE ?= $(firstword $(subst /, ,$(TARGET)))
 WORKLOAD_NAME ?= $(if $(findstring /,$(TARGET)),$(word 2,$(subst /, ,$(TARGET))),$(TARGET))
-WORKLOAD_TAG ?= $(subst /,-,$(WORKLOAD_MAKE_TARGET))
+WORKLOAD_TAG ?= $(subst /,-,$(TARGET))
 WORKLOAD_BIN ?=
 WORKLOAD_LINUX_BIN := $(WORKLOAD_HOME)/build/linux-workloads/$(WORKLOAD_NAME)/fw_payload.bin
 WORKLOAD_AM_BIN_DIR := $(WORKLOAD_HOME)/build/am-workloads/$(WORKLOAD_NAME)/package/bin
-WORKLOAD_OUT_DIR ?= $(BUILD_DIR)/ready-to-run/$(WORKLOAD_TAG)
+WORKLOAD_OUT_DIR ?= $(READY_TO_RUN_DIR)/$(WORKLOAD_TAG)
 WORKLOAD_OUT_BIN ?= $(WORKLOAD_OUT_DIR)/$(WORKLOAD_TAG).bin
 WORKLOAD_OUT_TXT ?= $(WORKLOAD_OUT_DIR)/$(WORKLOAD_TAG).txt
-DDR_MAP ?= row,ba,col,bg
 BIN2DDR_ARGS ?=
 
 HOST_BIN ?= $(if $(FPGA_HOST_HOME),$(FPGA_HOST_HOME)/difftest/build/fpga-host,)
 HOST_ARGS ?=
 RUN_LOG ?= $(REMOTE_DIR)/build/run-log/run-$$(date +%Y%m%d-%H%M%S-%N).log
 
-FPGA_REMOTE ?= fpga
-FPGA_REMOTE_DIR ?= /home/youkunlin/FpgaDiff-playground
-SYNC_PATHS ?= $(BUILD_DIR)/release $(BUILD_DIR)/ready-to-run $(BUILD_DIR)/bitstream
-
-.PHONY: help init link_difftest clean verilog release host bit write_bitstream write_jtag_ddr reset_cpu workload nemu sync_fpga run_host xiangshan nutshell xs nut
+.PHONY: help init link_difftest clean verilog release host bit write_bitstream \
+	write_jtag_ddr reset_cpu workload nemu run_host \
+	xiangshan nutshell xs nut
 
 help:
 	@printf '%s\n' 'FpgaDiff playground targets:'
@@ -138,10 +141,9 @@ help:
 	@printf '%s\n' '  make verilog nutshell             build NutShell FPGA DiffTest Verilog'
 	@printf '%s\n' '  make release xiangshan            package RTL/difftest release'
 	@printf '%s\n' '  make host xiangshan FPGA_HOST_HOME=...'
-	@printf '%s\n' '  make bit CPU=kmh CORE_DIR=...      build bitstream and copy bit/ltx to build/bitstream/<cpu>'
-	@printf '%s\n' '  make workload TARGET=linux/hello   build workload and generate build/ready-to-run/<target>'
-	@printf '%s\n' '  make nemu                         build NEMU ref so into build/ready-to-run/<NEMU_CONFIG>/'
-	@printf '%s\n' '  make sync_fpga                     copy build/release, ready-to-run, bitstream to fpga host'
+	@printf '%s\n' '  make bit xiangshan                build bitstream bundle under bitstream/<design>-<time>/'
+	@printf '%s\n' '  make workload TARGET=linux/hello   build workload and generate ready-to-run/<target>'
+	@printf '%s\n' '  make nemu                         build NEMU ref so into ready-to-run/<NEMU_CONFIG>/'
 	@printf '%s\n' '  make write_bitstream FPGA_BIT_HOME=...'
 	@printf '%s\n' '  make write_jtag_ddr FPGA_BIT_HOME=... DDR_WORKLOAD=...'
 	@printf '%s\n' '  make reset_cpu FPGA_BIT_HOME=...'
@@ -175,9 +177,14 @@ verilog:
 	$(MAKE) link_difftest
 	mkdir -p $(BUILD_LOG_DIR)
 ifeq ($(DESIGN),nutshell)
-	set -o pipefail; NOOP_HOME=$(NUT_HOME) $(MAKE) -C $(NUT_HOME) verilog BOARD=$(NUT_BOARD) MILL_ARGS="$(NUT_MILL_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
+	set -o pipefail; \
+	NOOP_HOME=$(NUT_HOME) \
+	$(MAKE) -C $(NUT_HOME) verilog BOARD=$(NUT_BOARD) \
+		MILL_ARGS="$(NUT_MILL_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
 else
-	set -o pipefail; $(MAKE) -C $(XS_HOME) verilog FPGA=1 CONFIG=$(XS_CONFIG) DEBUG_ARGS="$(XS_DEBUG_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
+	set -o pipefail; \
+	$(MAKE) -C $(XS_HOME) verilog FPGA=1 CONFIG=$(XS_CONFIG) \
+		DEBUG_ARGS="$(XS_DEBUG_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
 endif
 
 release:
@@ -205,37 +212,69 @@ host:
 	$(call require_var,FPGA_HOST_HOME)
 	$(MAKE) link_difftest
 	mkdir -p $(BUILD_LOG_DIR)
-	set -o pipefail; NOOP_HOME=$(FPGA_HOST_HOME) $(MAKE) -C $(FPGA_HOST_HOME)/difftest fpga-host $(FPGA_HOST_ARGS) 2>&1 | tee $(HOST_LOG)
+	set -o pipefail; \
+	NOOP_HOME=$(FPGA_HOST_HOME) \
+	$(MAKE) -C $(FPGA_HOST_HOME)/difftest fpga-host $(FPGA_HOST_ARGS) \
+		2>&1 | tee $(HOST_LOG)
 
 bit:
-	$(call fpga_run,mkdir -p $(FPGA_BUILD_LOG_DIR) $(BITSTREAM_DIR))
-	$(call fpga_run,set -o pipefail; $(MAKE) -C $(FPGA_DIFF_HOME) all CPU=$(CPU) CORE_DIR=$(CORE_DIR) CHI_DIR=$(CHI_DIR) 2>&1 | tee $(BIT_LOG))
-	$(call fpga_run,set -o pipefail; $(MAKE) -C $(FPGA_DIFF_HOME) bitstream PRJ=$(PRJ) 2>&1 | tee -a $(BIT_LOG))
-	$(call fpga_run,find $(FPGA_DIFF_HOME)/fpga_$(CPU) -type f \( -name '*.bit' -o -name '*.ltx' \) -exec cp -f {} $(BITSTREAM_DIR)/ \; 2>&1 | tee -a $(BIT_LOG) && find $(BITSTREAM_DIR) -maxdepth 1 -type f | sort | tee -a $(BIT_LOG))
+	$(call require_design)
+	$(call remote,set -e; \
+		release_src="$(BIT_SRC_DIR)"; \
+		test -n "$$release_src" || { \
+			echo "ERROR: missing latest release path: $(RELEASE_LATEST_PATH)"; \
+			echo "Run make release $(DESIGN) first or set BIT_SRC_DIR=..."; \
+			exit 1; \
+		}; \
+		test -d "$$release_src" || { \
+			echo "ERROR: bit release directory not found: $$release_src"; \
+			exit 1; \
+		}; \
+		test -n "$(BIT_OUT_DIR)" && test "$(BIT_OUT_DIR)" != "/" || { \
+			echo "ERROR: refusing unsafe BIT_OUT_DIR=$(BIT_OUT_DIR)"; \
+			exit 1; \
+		}; \
+		rm -rf "$(BIT_OUT_DIR)"; \
+		mkdir -p "$(FPGA_BUILD_LOG_DIR)" "$(BIT_OUT_DIR)")
+	$(call remote,set -o pipefail; \
+		$(MAKE) -C $(FPGA_DIFF_HOME) all CPU=$(CPU) CORE_DIR=$(CORE_DIR) CHI_DIR=$(CHI_DIR) \
+			2>&1 | tee $(BIT_LOG))
+	$(call remote,set -o pipefail; \
+		$(MAKE) -C $(FPGA_DIFF_HOME) bitstream PRJ=$(PRJ) 2>&1 | tee -a $(BIT_LOG))
+	$(call remote,set -o pipefail; \
+		release_src="$(BIT_SRC_DIR)"; \
+		find $(FPGA_DIFF_HOME)/fpga_$(CPU) -type f \( -name '*.bit' -o -name '*.ltx' \) \
+			-exec cp -f {} "$(BIT_OUT_DIR)/" \; && \
+		cp -a "$$release_src" "$(BIT_OUT_DIR)/" && \
+		find "$(BIT_OUT_DIR)" -maxdepth 1 -mindepth 1 | sort | tee -a $(BIT_LOG))
 
 write_bitstream:
 	$(call require_var,FPGA_BIT_HOME)
-	$(call fpga_run,$(MAKE) -C $(FPGA_DIFF_HOME) write_bitstream FPGA_BIT_HOME=$(FPGA_BIT_HOME))
+	$(call remote,$(MAKE) -C $(FPGA_DIFF_HOME) write_bitstream FPGA_BIT_HOME=$(FPGA_BIT_HOME))
 
 write_jtag_ddr:
 	$(call require_var,FPGA_BIT_HOME)
 	$(call require_var,DDR_WORKLOAD)
-	$(call fpga_run,$(MAKE) -C $(FPGA_DIFF_HOME) write_jtag_ddr FPGA_BIT_HOME=$(FPGA_BIT_HOME) WORKLOAD=$(DDR_WORKLOAD))
+	$(call remote,$(MAKE) -C $(FPGA_DIFF_HOME) write_jtag_ddr FPGA_BIT_HOME=$(FPGA_BIT_HOME) WORKLOAD=$(DDR_WORKLOAD))
 
 reset_cpu:
 	$(call require_var,FPGA_BIT_HOME)
-	$(call fpga_run,$(MAKE) -C $(FPGA_DIFF_HOME) reset_cpu FPGA_BIT_HOME=$(FPGA_BIT_HOME))
+	$(call remote,$(MAKE) -C $(FPGA_DIFF_HOME) reset_cpu FPGA_BIT_HOME=$(FPGA_BIT_HOME))
 
 workload:
 	mkdir -p $(WORKLOAD_OUT_DIR) $(BUILD_LOG_DIR)
-	set -o pipefail; $(MAKE) -C $(WORKLOAD_HOME) $(WORKLOAD_MAKE_TARGET) -j$(JOBS) 2>&1 | tee $(WORKLOAD_LOG)
+	set -o pipefail; $(MAKE) -C $(WORKLOAD_HOME) $(TARGET) -j$(JOBS) 2>&1 | tee $(WORKLOAD_LOG)
 	set -o pipefail; src="$(WORKLOAD_BIN)"; \
 	if [ -z "$$src" ] && [ "$(WORKLOAD_TYPE)" = "linux" ]; then src="$(WORKLOAD_LINUX_BIN)"; fi; \
-	if [ -z "$$src" ] && [ "$(WORKLOAD_TYPE)" = "am" ]; then src=$$(find "$(WORKLOAD_AM_BIN_DIR)" -maxdepth 1 -type f -name '*.bin' | sort | head -n 1); fi; \
+	if [ -z "$$src" ] && [ "$(WORKLOAD_TYPE)" = "am" ]; then \
+		src=$$(find "$(WORKLOAD_AM_BIN_DIR)" -maxdepth 1 -type f -name '*.bin' | sort | head -n 1); \
+	fi; \
 	test -n "$$src" && test -f "$$src" || { echo "ERROR: workload binary not found. Set WORKLOAD_BIN=..."; exit 1; }; \
 	cp "$$src" $(WORKLOAD_OUT_BIN) 2>&1 | tee -a $(WORKLOAD_LOG)
 	set -o pipefail; $(MAKE) -C $(BIN2DDR_HOME) FPGA=1 2>&1 | tee -a $(WORKLOAD_LOG)
-	set -o pipefail; $(BIN2DDR_HOME)/bin2ddr -i $(WORKLOAD_OUT_BIN) -o $(WORKLOAD_OUT_TXT) -m $(DDR_MAP) $(BIN2DDR_ARGS) 2>&1 | tee -a $(WORKLOAD_LOG)
+	set -o pipefail; \
+	$(BIN2DDR_HOME)/bin2ddr -i $(WORKLOAD_OUT_BIN) -o $(WORKLOAD_OUT_TXT) \
+		$(BIN2DDR_ARGS) 2>&1 | tee -a $(WORKLOAD_LOG)
 
 nemu:
 	mkdir -p $(NEMU_OUT_DIR) $(BUILD_LOG_DIR)
@@ -245,13 +284,11 @@ nemu:
 	cp -f "$(NEMU_SRC_SO)" "$(NEMU_OUT_SO)" 2>&1 | tee -a $(NEMU_LOG)
 	echo "NEMU ref so copied to $(NEMU_OUT_SO)" | tee -a $(NEMU_LOG)
 
-sync_fpga:
-	$(SSH) $(FPGA_REMOTE) 'mkdir -p $(FPGA_REMOTE_DIR)/build'
-	scp -r $(SYNC_PATHS) $(FPGA_REMOTE):$(FPGA_REMOTE_DIR)/build/
-
 run_host:
 	$(call require_var,HOST_ARGS)
-	$(call fpga_run,run_log="$(RUN_LOG)"; mkdir -p "$$(dirname "$$run_log")" && $(HOST_BIN) $(HOST_ARGS) | tee "$$run_log")
+	$(call remote,run_log="$(RUN_LOG)"; \
+		mkdir -p "$$(dirname "$$run_log")" && \
+		$(HOST_BIN) $(HOST_ARGS) | tee "$$run_log")
 
 xiangshan nutshell xs nut:
 	@:

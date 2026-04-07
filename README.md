@@ -5,8 +5,8 @@
 ```text
 XiangShan / NutShell Verilog
   -> 顶层 difftest 生成 release / fpga-host
-  -> NEMU 生成 reference so
   -> env-scripts/fpga_diff 生成 Vivado bitstream
+  -> NEMU 生成 reference so
   -> workload-builder 编译 workload
   -> Bin2ddr 生成 DDR txt
   -> FPGA 上烧 bit、写 DDR、运行 fpga-host 协同仿真
@@ -16,16 +16,16 @@ XiangShan / NutShell Verilog
 
 ## 产物目录
 
-顶层生成物统一放在 `build/`，该目录已加入 `.gitignore`：
+顶层构建日志和 release 仍放在 `build/`，待运行输入放在顶层 `ready-to-run/`，待烧写的 bitstream bundle 放在顶层 `bitstream/`。这些目录都已加入 `.gitignore`：
 
 | 路径 | 内容 |
 | --- | --- |
 | `build/release/` | release tarball、解包后的 release、`latest-<design>.path`、`latest-<design>.name` |
-| `build/ready-to-run/<nemu-config>/` | `make nemu` 复制出的 `riscv64-nemu-interpreter-so` |
-| `build/ready-to-run/<target>/` | workload `.bin` 和 Bin2ddr 转出的 `.txt` |
-| `build/bitstream/<cpu>/` | Vivado 生成后收集出的 `.bit` 和 `.ltx` |
 | `build/build-log/` | `verilog`、`release`、`host`、`bit`、`workload`、`nemu` 等构建阶段日志 |
 | `build/run-log/` | `run_host` 的运行日志，默认文件名带时间戳 |
+| `ready-to-run/<nemu-config>/` | `make nemu` 复制出的 `riscv64-nemu-interpreter-so` |
+| `ready-to-run/<target>/` | workload `.bin` 和 Bin2ddr 转出的 `.txt` |
+| `bitstream/<design>-<time>/` | 当前 bundle 的 `.bit/.ltx` 和使用的 release 解包目录 |
 
 `RELEASE_SUFFIX` 默认是当前时间 `HHMMSS`，用于避免同一天同配置 release 覆盖。需要隐藏 suffix 时可以显式传空值：
 
@@ -85,9 +85,45 @@ make host nutshell FPGA_HOST_HOME=$NUT_RELEASE
 
 `host` 只面向 release 目录运行，因此需要显式传 `FPGA_HOST_HOME=<release-root>`。无论 XiangShan 还是 NutShell，默认参数都是 `RELEASE=1 FPGA=1 DIFFTEST_PERFCNT=1`。
 
+## Vivado Bitstream
+
+`bit` 是唯一的顶层 Vivado 生成入口，内部会执行 `env-scripts/fpga_diff` 的 `all` 和 `bitstream`，然后把 `.bit/.ltx` 和本次使用的 release 目录收集到 `bitstream/<design>-<time>/`：
+
+```sh
+make bit xiangshan
+```
+
+Vivado 可放到远端执行，例如 `open103`：
+
+```sh
+make bit \
+  xiangshan \
+  REMOTE=open103 \
+  REMOTE_DIR=/nfs/home/youkunlin/workspace/FpgaDiff-playground
+```
+
+`open103` 的 Vivado 环境若已配置好，不需要额外传 `REMOTE_ENV`。
+
+Vivado 生成日志也会写到远端仓库的 `build/build-log/`，如果 `REMOTE_DIR` 在共享 NFS 上，本机可以直接查看。
+
+默认会使用 `build/release/latest-<design>.path` 指向的 release，`CORE_DIR` 也固定为该 release 下的 `build/`。需要指定其他 release 时传：
+
+```sh
+make bit xiangshan BIT_SRC_DIR=/path/to/release
+```
+
+生成后的 bundle 形如：
+
+```text
+bitstream/xiangshan-YYYYmmdd-HHMMSS/
+bitstream/xiangshan-YYYYmmdd-HHMMSS/<release-name>/
+bitstream/xiangshan-YYYYmmdd-HHMMSS/*.bit
+bitstream/xiangshan-YYYYmmdd-HHMMSS/*.ltx
+```
+
 ## NEMU Reference
 
-`nemu` 会在 `NEMU/` 里先执行 defconfig，再执行并行编译，最后把 reference so 复制到顶层 `build/ready-to-run/<NEMU_CONFIG>/`：
+`nemu` 会在 `NEMU/` 里先执行 defconfig，再执行并行编译，最后把 reference so 复制到顶层 `ready-to-run/<NEMU_CONFIG>/`：
 
 ```sh
 make nemu
@@ -108,7 +144,7 @@ make nemu NEMU_CONFIG=riscv64-nutshell-ref_defconfig
 默认输出：
 
 ```text
-build/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so
+ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so
 ```
 
 日志会写到：
@@ -117,31 +153,9 @@ build/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpre
 build/build-log/nemu-<NEMU_CONFIG>-YYYYmmdd-HHMMSS.log
 ```
 
-## Vivado Bitstream
-
-`bit` 是唯一的顶层 Vivado 生成入口，内部会执行 `env-scripts/fpga_diff` 的 `all` 和 `bitstream`，然后把 `.bit/.ltx` 收集到 `build/bitstream/<cpu>/`：
-
-```sh
-make bit CPU=kmh CORE_DIR=$XS_RELEASE/build
-```
-
-Vivado 可放到远端执行，例如 `open103`：
-
-```sh
-make bit \
-  REMOTE=open103 \
-  REMOTE_DIR=/nfs/home/youkunlin/workspace/FpgaDiff-playground \
-  CPU=kmh \
-  CORE_DIR=$XS_RELEASE/build
-```
-
-`open103` 的 Vivado 环境若已配置好，不需要额外传 `REMOTE_ENV`。
-
-Vivado 生成日志也会写到远端仓库的 `build/build-log/`，如果 `REMOTE_DIR` 在共享 NFS 上，本机可以直接查看。
-
 ## Workload
 
-`workload` 会编译程序，并把 `.bin` 和 `.txt` 都放到 `build/ready-to-run/<target>/`：
+`workload` 会编译程序，并把 `.bin` 和 `.txt` 都放到顶层 `ready-to-run/<target>/`：
 
 ```sh
 make workload TARGET=linux/hello
@@ -150,29 +164,35 @@ make workload TARGET=linux/hello
 默认输出：
 
 ```text
-build/ready-to-run/linux-hello/linux-hello.bin
-build/ready-to-run/linux-hello/linux-hello.txt
+ready-to-run/linux-hello/linux-hello.bin
+ready-to-run/linux-hello/linux-hello.txt
 ```
 
-如果 `TARGET` 不带类型，默认按 Linux workload 处理；AM workload 也支持，默认取 `package/bin/` 下排序后的第一个 `.bin`。
+`TARGET` 会原样传给 `workload-builder`，例如 `linux/hello` 或 `am/<name>`。AM workload 默认取 `package/bin/` 下排序后的第一个 `.bin`。
 
-## 同步到 FPGA 上位机
+## 复制到 FPGA 上位机
 
-如果上位机 `fpga` 不共享 NFS，可以把 `build/release`、`build/ready-to-run` 和 `build/bitstream` 同步到远端固定路径。NEMU reference so 位于 `build/ready-to-run/<NEMU_CONFIG>`，会随 `ready-to-run` 一起同步：
+如果上位机 `fpga` 不共享 NFS，直接把要测试的 bundle 和顶层 `ready-to-run/` 复制到远端固定路径：
 
 ```sh
-make sync_fpga \
-  FPGA_REMOTE=fpga \
-  FPGA_REMOTE_DIR=/home/youkunlin/FpgaDiff-playground
+REMOTE_ROOT=/home/youkunlin/FpgaDiff-playground
+BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
+
+ssh fpga "mkdir -p $REMOTE_ROOT/bitstream $REMOTE_ROOT/ready-to-run"
+rsync -a --delete \
+  bitstream/$BIT_TAG/ \
+  fpga:$REMOTE_ROOT/bitstream/$BIT_TAG/
+rsync -a --delete ready-to-run/ fpga:$REMOTE_ROOT/ready-to-run/
 ```
 
-同步后远端目录结构仍是：
+同步后远端关键路径为：
 
 ```text
-/home/youkunlin/FpgaDiff-playground/build/release
-/home/youkunlin/FpgaDiff-playground/build/ready-to-run
-/home/youkunlin/FpgaDiff-playground/build/bitstream
-/home/youkunlin/FpgaDiff-playground/build/ready-to-run/<NEMU_CONFIG>
+/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/<release-name>
+/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.bit
+/home/youkunlin/FpgaDiff-playground/bitstream/<bundle-name>/*.ltx
+/home/youkunlin/FpgaDiff-playground/ready-to-run/<NEMU_CONFIG>
+/home/youkunlin/FpgaDiff-playground/ready-to-run/<target>
 ```
 
 ## 烧写和运行
@@ -189,27 +209,31 @@ make reset_cpu FPGA_BIT_HOME=/path/to/bitstream-dir
 
 ```sh
 REMOTE_ROOT=/home/youkunlin/FpgaDiff-playground
+BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
+BIT_ROOT=$REMOTE_ROOT/bitstream/$BIT_TAG
 
 make write_bitstream \
   REMOTE=fpga \
   REMOTE_DIR=$REMOTE_ROOT \
-  FPGA_BIT_HOME=$REMOTE_ROOT/build/bitstream/kmh
+  FPGA_BIT_HOME=$BIT_ROOT
 
 make write_jtag_ddr \
   REMOTE=fpga \
   REMOTE_DIR=$REMOTE_ROOT \
-  FPGA_BIT_HOME=$REMOTE_ROOT/build/bitstream/kmh \
-  DDR_WORKLOAD=$REMOTE_ROOT/build/ready-to-run/linux-hello/linux-hello.txt
+  FPGA_BIT_HOME=$BIT_ROOT \
+  DDR_WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello/linux-hello.txt
 ```
 
 `run_host` 也支持 `REMOTE`，默认日志写到远端 `build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log`：
 
 ```sh
 XS_RELEASE_NAME=$(cat build/release/latest-xiangshan.name)
+BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
+BIT_ROOT=/home/youkunlin/FpgaDiff-playground/bitstream/$BIT_TAG
 
 make run_host \
   REMOTE=fpga \
   REMOTE_DIR=/home/youkunlin/FpgaDiff-playground \
-  HOST_BIN=/home/youkunlin/FpgaDiff-playground/build/release/$XS_RELEASE_NAME/difftest/build/fpga-host \
-  HOST_ARGS="--diff /home/youkunlin/FpgaDiff-playground/build/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so -i /home/youkunlin/FpgaDiff-playground/build/ready-to-run/linux-hello/linux-hello.bin"
+  HOST_BIN=$BIT_ROOT/$XS_RELEASE_NAME/difftest/build/fpga-host \
+  HOST_ARGS="--diff /home/youkunlin/FpgaDiff-playground/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so -i /home/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.bin"
 ```
