@@ -23,6 +23,7 @@ NUT_HOME := $(ROOT_DIR)/NutShell
 WORKLOAD_HOME := $(ROOT_DIR)/workload-builder
 BIN2DDR_HOME := $(ROOT_DIR)/Bin2ddr
 DIFFTEST_HOME := $(ROOT_DIR)/difftest
+NEMU_HOME := $(ROOT_DIR)/NEMU
 
 DIFFTEST_CONFIG ?= ESBIFDU
 DIFFTEST_EXCLUDE ?= Vec
@@ -44,6 +45,13 @@ RELEASE_LATEST_NAME ?= $(RELEASE_DIR)/latest-$(DESIGN).name
 VERILOG_LOG ?= $(BUILD_LOG_DIR)/verilog-$(DESIGN)-$(LOG_STAMP).log
 HOST_LOG ?= $(BUILD_LOG_DIR)/host-$(DESIGN)-$(LOG_STAMP).log
 WORKLOAD_LOG ?= $(BUILD_LOG_DIR)/workload-$(WORKLOAD_TAG)-$(LOG_STAMP).log
+
+NEMU_CONFIG ?= riscv64-xs-ref-novec-nopmppma_defconfig
+NEMU_SO_NAME ?= riscv64-nemu-interpreter-so
+NEMU_OUT_DIR ?= $(BUILD_DIR)/ready-to-run/$(NEMU_CONFIG)
+NEMU_OUT_SO ?= $(NEMU_OUT_DIR)/$(NEMU_SO_NAME)
+NEMU_SRC_SO ?= $(NEMU_HOME)/build/$(NEMU_SO_NAME)
+NEMU_LOG ?= $(BUILD_LOG_DIR)/nemu-$(NEMU_CONFIG)-$(LOG_STAMP).log
 
 # Only Vivado/FPGA run-side commands use REMOTE. Other build targets run locally.
 REMOTE ?=
@@ -121,7 +129,7 @@ FPGA_REMOTE ?= fpga
 FPGA_REMOTE_DIR ?= /home/youkunlin/FpgaDiff-playground
 SYNC_PATHS ?= $(BUILD_DIR)/release $(BUILD_DIR)/ready-to-run $(BUILD_DIR)/bitstream
 
-.PHONY: help init link_difftest clean verilog release host bit write_bitstream write_jtag_ddr reset_cpu workload sync_fpga run_host xiangshan nutshell xs nut
+.PHONY: help init link_difftest clean verilog release host bit write_bitstream write_jtag_ddr reset_cpu workload nemu sync_fpga run_host xiangshan nutshell xs nut
 
 help:
 	@printf '%s\n' 'FpgaDiff playground targets:'
@@ -132,6 +140,7 @@ help:
 	@printf '%s\n' '  make host xiangshan FPGA_HOST_HOME=...'
 	@printf '%s\n' '  make bit CPU=kmh CORE_DIR=...      build bitstream and copy bit/ltx to build/bitstream/<cpu>'
 	@printf '%s\n' '  make workload TARGET=linux/hello   build workload and generate build/ready-to-run/<target>'
+	@printf '%s\n' '  make nemu                         build NEMU ref so into build/ready-to-run/<NEMU_CONFIG>/'
 	@printf '%s\n' '  make sync_fpga                     copy build/release, ready-to-run, bitstream to fpga host'
 	@printf '%s\n' '  make write_bitstream FPGA_BIT_HOME=...'
 	@printf '%s\n' '  make write_jtag_ddr FPGA_BIT_HOME=... DDR_WORKLOAD=...'
@@ -227,6 +236,14 @@ workload:
 	cp "$$src" $(WORKLOAD_OUT_BIN) 2>&1 | tee -a $(WORKLOAD_LOG)
 	set -o pipefail; $(MAKE) -C $(BIN2DDR_HOME) FPGA=1 2>&1 | tee -a $(WORKLOAD_LOG)
 	set -o pipefail; $(BIN2DDR_HOME)/bin2ddr -i $(WORKLOAD_OUT_BIN) -o $(WORKLOAD_OUT_TXT) -m $(DDR_MAP) $(BIN2DDR_ARGS) 2>&1 | tee -a $(WORKLOAD_LOG)
+
+nemu:
+	mkdir -p $(NEMU_OUT_DIR) $(BUILD_LOG_DIR)
+	set -o pipefail; $(MAKE) -C $(NEMU_HOME) NEMU_HOME=$(NEMU_HOME) $(NEMU_CONFIG) 2>&1 | tee $(NEMU_LOG)
+	set -o pipefail; $(MAKE) -C $(NEMU_HOME) NEMU_HOME=$(NEMU_HOME) -j$(JOBS) 2>&1 | tee -a $(NEMU_LOG)
+	test -f "$(NEMU_SRC_SO)" || { echo "ERROR: NEMU ref so not found: $(NEMU_SRC_SO)"; exit 1; }
+	cp -f "$(NEMU_SRC_SO)" "$(NEMU_OUT_SO)" 2>&1 | tee -a $(NEMU_LOG)
+	echo "NEMU ref so copied to $(NEMU_OUT_SO)" | tee -a $(NEMU_LOG)
 
 sync_fpga:
 	$(SSH) $(FPGA_REMOTE) 'mkdir -p $(FPGA_REMOTE_DIR)/build'

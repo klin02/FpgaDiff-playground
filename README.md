@@ -5,6 +5,7 @@
 ```text
 XiangShan / NutShell Verilog
   -> 顶层 difftest 生成 release / fpga-host
+  -> NEMU 生成 reference so
   -> env-scripts/fpga_diff 生成 Vivado bitstream
   -> workload-builder 编译 workload
   -> Bin2ddr 生成 DDR txt
@@ -20,9 +21,10 @@ XiangShan / NutShell Verilog
 | 路径 | 内容 |
 | --- | --- |
 | `build/release/` | release tarball、解包后的 release、`latest-<design>.path`、`latest-<design>.name` |
+| `build/ready-to-run/<nemu-config>/` | `make nemu` 复制出的 `riscv64-nemu-interpreter-so` |
 | `build/ready-to-run/<target>/` | workload `.bin` 和 Bin2ddr 转出的 `.txt` |
 | `build/bitstream/<cpu>/` | Vivado 生成后收集出的 `.bit` 和 `.ltx` |
-| `build/build-log/` | `verilog`、`release`、`host`、`bit`、`workload` 等构建阶段日志 |
+| `build/build-log/` | `verilog`、`release`、`host`、`bit`、`workload`、`nemu` 等构建阶段日志 |
 | `build/run-log/` | `run_host` 的运行日志，默认文件名带时间戳 |
 
 `RELEASE_SUFFIX` 默认是当前时间 `HHMMSS`，用于避免同一天同配置 release 覆盖。需要隐藏 suffix 时可以显式传空值：
@@ -83,6 +85,38 @@ make host nutshell FPGA_HOST_HOME=$NUT_RELEASE
 
 `host` 只面向 release 目录运行，因此需要显式传 `FPGA_HOST_HOME=<release-root>`。无论 XiangShan 还是 NutShell，默认参数都是 `RELEASE=1 FPGA=1 DIFFTEST_PERFCNT=1`。
 
+## NEMU Reference
+
+`nemu` 会在 `NEMU/` 里先执行 defconfig，再执行并行编译，最后把 reference so 复制到顶层 `build/ready-to-run/<NEMU_CONFIG>/`：
+
+```sh
+make nemu
+```
+
+默认配置是：
+
+```text
+riscv64-xs-ref-novec-nopmppma_defconfig
+```
+
+切换配置时传 `NEMU_CONFIG`：
+
+```sh
+make nemu NEMU_CONFIG=riscv64-nutshell-ref_defconfig
+```
+
+默认输出：
+
+```text
+build/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so
+```
+
+日志会写到：
+
+```text
+build/build-log/nemu-<NEMU_CONFIG>-YYYYmmdd-HHMMSS.log
+```
+
 ## Vivado Bitstream
 
 `bit` 是唯一的顶层 Vivado 生成入口，内部会执行 `env-scripts/fpga_diff` 的 `all` 和 `bitstream`，然后把 `.bit/.ltx` 收集到 `build/bitstream/<cpu>/`：
@@ -124,7 +158,7 @@ build/ready-to-run/linux-hello/linux-hello.txt
 
 ## 同步到 FPGA 上位机
 
-如果上位机 `fpga` 不共享 NFS，可以把 `build/release`、`build/ready-to-run` 和 `build/bitstream` 同步到远端固定路径：
+如果上位机 `fpga` 不共享 NFS，可以把 `build/release`、`build/ready-to-run` 和 `build/bitstream` 同步到远端固定路径。NEMU reference so 位于 `build/ready-to-run/<NEMU_CONFIG>`，会随 `ready-to-run` 一起同步：
 
 ```sh
 make sync_fpga \
@@ -138,6 +172,7 @@ make sync_fpga \
 /home/youkunlin/FpgaDiff-playground/build/release
 /home/youkunlin/FpgaDiff-playground/build/ready-to-run
 /home/youkunlin/FpgaDiff-playground/build/bitstream
+/home/youkunlin/FpgaDiff-playground/build/ready-to-run/<NEMU_CONFIG>
 ```
 
 ## 烧写和运行
@@ -176,5 +211,5 @@ make run_host \
   REMOTE=fpga \
   REMOTE_DIR=/home/youkunlin/FpgaDiff-playground \
   HOST_BIN=/home/youkunlin/FpgaDiff-playground/build/release/$XS_RELEASE_NAME/difftest/build/fpga-host \
-  HOST_ARGS="--diff /path/to/ref-so -i /home/youkunlin/FpgaDiff-playground/build/ready-to-run/linux-hello/linux-hello.bin"
+  HOST_ARGS="--diff /home/youkunlin/FpgaDiff-playground/build/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so -i /home/youkunlin/FpgaDiff-playground/build/ready-to-run/linux-hello/linux-hello.bin"
 ```
