@@ -173,6 +173,8 @@ make run_host \
   HOST_ARGS="--diff $FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so -i $FPGA_ROOT/ready-to-run/linux-hello/linux-hello.bin"
 ```
 
+In Copilot Local Mode, remote write and run steps should use the form `ssh "command" 2>&1 | tee log ; echo ""`. This applies to `make write_bitstream`, `make write_jtag_ddr`, `make reset_cpu`, and `make run_host`.
+
 Logs are written locally by default:
 
 ```text
