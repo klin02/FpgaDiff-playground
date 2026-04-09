@@ -23,6 +23,7 @@ jobs/<YYYYmmdd-HHMM>-<keyword>/
 ├── debug-plan.md          # Initial plan with hypotheses and steps
 ├── progress.md            # Chronological execution log
 ├── commands.sh            # Reusable commands and helper functions
+├── summary.md             # Job-level summary of changes, tests, artifacts, and outcomes
 ├── problem-analysis.md    # Root cause analysis (written at conclusion)
 └── logs/                  # Collected log files and outputs
 ```
@@ -114,6 +115,47 @@ Result: width is x1, expected x4. Possible signal issue. Investigating.
 - Record the **decision** made after each step.
 - If a step invalidates the plan, note it and update the plan or create a revised version.
 
+## Phase 2.5: Maintain a Job Summary
+
+Every debug job MUST include `summary.md` under the corresponding `jobs/` subdirectory.
+
+This file is the concise, human-readable summary of what the job changed, what was tested, which artifacts were used, and what the final outcome was. Unlike `progress.md`, it should not be a step-by-step log. Keep it updated during the investigation and finalize it before ending the job.
+
+### REQUIRED CONTENTS
+
+1. **Goal / Problem**
+   - What issue this job was trying to debug or validate.
+
+2. **Changes Made**
+   - Code, config, script, or environment changes made during this job.
+   - If no files were changed, explicitly say so.
+
+3. **Tests / Runs Performed**
+   - What was executed or validated in this job.
+   - Include the important command or script entry point for each run.
+
+4. **Artifacts and Paths**
+   - Record the exact paths used for key runtime artifacts when applicable:
+   - `bit`
+   - `workload`
+   - `release`
+   - `host`
+   - Any other important inputs such as query DB, waveform, logs, or config files
+
+5. **Key Conclusions**
+   - The most important findings from this job.
+   - What was ruled in, ruled out, or still unknown.
+
+6. **Final Result**
+   - State the final observed outcome of the latest meaningful run in clear terms, for example:
+   - `GOOD TRAP`
+   - `BAD TRAP`
+   - Hang / deadlock
+   - Timeout
+   - Boot success but slow
+   - Runs at <speed/throughput>
+   - If multiple runs matter, summarize the latest result first and list notable earlier results after it.
+
 ## Phase 3: Sub-Agent Delegation
 
 For tasks that require analyzing large log files, inspecting query databases, or searching across many files, delegate to a sub-agent:
@@ -142,7 +184,14 @@ Use `askQuestions` to confirm decisions at critical points:
 
 ## Phase 5: Conclusion
 
-When the issue is resolved (or explicitly deferred), write `problem-analysis.md`:
+When the issue is resolved (or explicitly deferred), write both `summary.md` and `problem-analysis.md`.
+
+- `summary.md` captures what this job changed, tested, used, and observed.
+- `problem-analysis.md` captures the root cause and reasoning at conclusion time.
+
+Use `problem-analysis.md` for the detailed diagnosis, and `summary.md` for the quick operational handoff.
+
+Example `problem-analysis.md`:
 
 ```markdown
 # Problem Analysis: XDMA Host Flapping
@@ -180,15 +229,18 @@ For Level 2 and Level 3 details, refer to [`difftest/docs/test.md`](../difftest/
 - [ ] Create `jobs/<YYYYmmdd-HHMM>-<keyword>/`
 - [ ] Write `debug-plan.md` with hypotheses and steps
 - [ ] Start `progress.md` with environment info
+- [ ] Create `summary.md` with the problem statement and initial artifact paths
 
 During the session:
 
 - [ ] Update `progress.md` after each step
+- [ ] Update `summary.md` when runs, artifacts, or conclusions change
 - [ ] Use `askQuestions` for critical decisions
 - [ ] Delegate log analysis to sub-agents when appropriate
 
 After resolution:
 
+- [ ] Finalize `summary.md` with changes, tested items, artifact paths, and final result
 - [ ] Write `problem-analysis.md`
 - [ ] Verify the fix
 - [ ] Note any recurring patterns for future reference
