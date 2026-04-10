@@ -130,7 +130,7 @@ WORKLOAD_OUT_BIN ?= $(WORKLOAD_OUT_DIR)/$(WORKLOAD_TAG).bin
 WORKLOAD_OUT_TXT ?= $(WORKLOAD_OUT_DIR)/$(WORKLOAD_TAG).txt
 BIN2DDR_ARGS ?=
 
-HOST_BIN ?= $(if $(FPGA_HOST_HOME),$(FPGA_HOST_HOME)/difftest/build/fpga-host,)
+HOST_BIN ?= $(if $(FPGA_HOST_HOME),$(FPGA_HOST_HOME)/build/fpga-host,)
 HOST_ARGS ?=
 RUN_LOG ?= $(BUILD_DIR)/run-log/run-$$(date +%Y%m%d-%H%M%S).log
 
@@ -187,6 +187,7 @@ ifeq ($(DESIGN),nutshell)
 		MILL_ARGS="$(NUT_MILL_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
 else
 	set -o pipefail; \
+	NOOP_HOME=$(XS_HOME) \
 	$(MAKE) -C $(XS_HOME) verilog FPGA=1 CONFIG=$(XS_CONFIG) \
 		DEBUG_ARGS="$(XS_DEBUG_ARGS)" -j$(JOBS) 2>&1 | tee $(VERILOG_LOG)
 endif

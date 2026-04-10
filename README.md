@@ -236,6 +236,6 @@ BIT_ROOT=/home/youkunlin/FpgaDiff-playground/bitstream/$BIT_TAG
 make run_host \
   REMOTE=fpga \
   REMOTE_DIR=/home/youkunlin/FpgaDiff-playground \
-  HOST_BIN=$BIT_ROOT/$XS_RELEASE_NAME/difftest/build/fpga-host \
+  HOST_BIN=$BIT_ROOT/$XS_RELEASE_NAME/build/fpga-host \
   HOST_ARGS="--diff /home/youkunlin/FpgaDiff-playground/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so -i /home/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.bin"
 ```

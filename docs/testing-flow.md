@@ -79,7 +79,7 @@ make host xiangshan FPGA_HOST_HOME=$XS_RELEASE
 The host binary is built with `RELEASE=1 FPGA=1 DIFFTEST_PERFCNT=1` by default. The output binary is at:
 
 ```text
-$XS_RELEASE/difftest/build/fpga-host
+$XS_RELEASE/build/fpga-host
 ```
 
 Log: `build/build-log/host-<design>-<timestamp>.log`
@@ -195,7 +195,7 @@ make reset_cpu \
 ```sh
 make run_host \
   REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
-  HOST_BIN=$FPGA_ROOT/bitstream/$BIT_TAG/$XS_RELEASE_NAME/difftest/build/fpga-host \
+  HOST_BIN=$FPGA_ROOT/bitstream/$BIT_TAG/$XS_RELEASE_NAME/build/fpga-host \
   HOST_ARGS="--diff $FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so \
              -i $FPGA_ROOT/ready-to-run/linux-hello/linux-hello.bin"
 ```
