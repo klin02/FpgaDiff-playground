@@ -65,10 +65,11 @@ FPGA_DIFF_HOME := $(FPGA_ROOT)/env-scripts/fpga_diff
 FPGA_BUILD_LOG_DIR ?= $(FPGA_ROOT)/build/build-log
 
 CPU ?= $(if $(filter $(DESIGN),nutshell),nutshell,kmh)
+SUFFIX ?=
+PRJ_NAME = fpga_$(CPU)$(if $(strip $(SUFFIX)),-$(strip $(SUFFIX)),)
 BIT_SRC_DIR ?= $(shell cat "$(RELEASE_LATEST_PATH)" 2>/dev/null)
 CORE_DIR ?= $(BIT_SRC_DIR)/build
 CHI_DIR ?=
-PRJ ?= $(FPGA_DIFF_HOME)/fpga_$(CPU)/fpga_$(CPU).xpr
 BIT_ROOT ?= $(FPGA_ROOT)/bitstream
 BIT_TAG ?= $(DESIGN)-$(LOG_STAMP)
 BIT_OUT_DIR ?= $(BIT_ROOT)/$(BIT_TAG)
@@ -242,13 +243,13 @@ bit:
 		rm -rf "$(BIT_OUT_DIR)"; \
 		mkdir -p "$(FPGA_BUILD_LOG_DIR)" "$(BIT_OUT_DIR)")
 	$(call remote,set -o pipefail; \
-		$(MAKE) -C $(FPGA_DIFF_HOME) all CPU=$(CPU) CORE_DIR=$(CORE_DIR) CHI_DIR=$(CHI_DIR) \
+		$(MAKE) -C $(FPGA_DIFF_HOME) all CPU=$(CPU) SUFFIX="$(SUFFIX)" CORE_DIR=$(CORE_DIR) CHI_DIR=$(CHI_DIR) \
 			2>&1 | tee $(BIT_LOG))
 	$(call remote,set -o pipefail; \
-		$(MAKE) -C $(FPGA_DIFF_HOME) bitstream PRJ=$(PRJ) 2>&1 | tee -a $(BIT_LOG))
+		$(MAKE) -C $(FPGA_DIFF_HOME) bitstream CPU=$(CPU) SUFFIX="$(SUFFIX)" 2>&1 | tee -a $(BIT_LOG))
 	$(call remote,set -o pipefail; \
 		release_src="$(BIT_SRC_DIR)"; \
-		find $(FPGA_DIFF_HOME)/fpga_$(CPU) -type f \( -name "*.bit" -o -name "*.ltx" \) \
+		find $(FPGA_DIFF_HOME)/$(PRJ_NAME) -type f \( -name "*.bit" -o -name "*.ltx" \) \
 			-exec cp -f {} "$(BIT_OUT_DIR)/" \; && \
 		cp -a "$$release_src" "$(BIT_OUT_DIR)/" && \
 		find "$(BIT_OUT_DIR)" -maxdepth 1 -mindepth 1 | sort | tee -a $(BIT_LOG))
