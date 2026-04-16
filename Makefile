@@ -308,10 +308,9 @@ nemu:
 run_host:
 	$(call require_var,FPGA_BIT_HOME)
 	$(call require_var,WORKLOAD)
-	run_log="$(RUN_LOG)"; mkdir -p "$$(dirname "$$run_log")"
-	set -o pipefail; \
-	run_log="$(RUN_LOG)"; \
-	{ $(call remote, \
+	@run_log="$(RUN_LOG)"; mkdir -p "$$(dirname "$$run_log")"; \
+	exec > >(setsid tee "$$run_log") 2>&1; \
+	$(call remote,\
 		fpga_bit_home=$(call abs_path,$(FPGA_BIT_HOME)); \
 		workload_home=$(call abs_path,$(WORKLOAD)); \
 		workload_bin=$$(echo "$$workload_home"/*.bin); \
@@ -324,10 +323,10 @@ run_host:
 			FPGA_BIT_HOME=$$fpga_bit_home \
 			WORKLOAD=$$workload_txt"; \
 		if [ -n "$(DIFF)" ]; then \
-			FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --diff "$(call abs_path,$(DIFF))" -i "$$workload_bin"; \
+			exec env FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --diff "$(call abs_path,$(DIFF))" -i "$$workload_bin"; \
 		else \
-			FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --no-diff; \
-		fi); } 2>&1 | tee "$$run_log"
+			exec env FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --no-diff; \
+		fi)
 
 xiangshan nutshell xs nut:
 	@:
