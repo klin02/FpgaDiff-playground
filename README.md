@@ -9,7 +9,8 @@ XiangShan / NutShell Verilog
   -> NEMU generates reference SO
   -> workload-builder compiles workloads
   -> Bin2ddr generates DDR txt
-  -> FPGA: write bitstream, write DDR, run fpga-host co-simulation
+  -> FPGA: write bitstream, reset cpu
+  -> fpga-host runs external DDR load command, then starts co-simulation
 ```
 
 See [`docs/`](docs/README.md) for detailed guides. For DiffTest internals, see [`difftest/docs/`](difftest/docs/README.md).
@@ -203,9 +204,24 @@ Target names match `env-scripts/fpga_diff/Makefile`:
 
 ```sh
 make write_bitstream FPGA_BIT_HOME=/path/to/bitstream-dir
-make write_jtag_ddr FPGA_BIT_HOME=/path/to/bitstream-dir WORKLOAD=/path/to/workload.txt
 make reset_cpu FPGA_BIT_HOME=/path/to/bitstream-dir
+make run_host FPGA_BIT_HOME=/path/to/bitstream-dir \
+  WORKLOAD=/path/to/workload-dir DIFF=/path/to/nemu-so
 ```
+
+The recommended path is:
+
+1. `make write_bitstream`
+2. `make reset_cpu`
+3. `make run_host FPGA_BIT_HOME=... WORKLOAD=<workload-dir> [HOST=...] [DIFF=/path/to/nemu-so]`
+
+`run_host` now auto-resolves runtime inputs:
+
+- `fpga-host`: `HOST=...` if set, otherwise the `fpga-host` under `FPGA_BIT_HOME`
+- workload files: the only `.bin` and `.txt` inside `WORKLOAD`
+- host args: `DIFF=/path/to/nemu-so` for diff mode, empty `DIFF` for `--no-diff`
+
+`run_host` also auto-generates `FPGA_DDR_LOAD_CMD`, so `fpga-host` runs `write_jtag_ddr` before releasing reset. `write_jtag_ddr` and `reset_cpu` remain available as manual/debug helpers.
 
 These commands support `REMOTE`. When running on the FPGA host, use the fixed remote path:
 
@@ -219,23 +235,21 @@ make write_bitstream \
   REMOTE_DIR=$REMOTE_ROOT \
   FPGA_BIT_HOME=$BIT_ROOT
 
-make write_jtag_ddr \
-  REMOTE=fpga \
-  REMOTE_DIR=$REMOTE_ROOT \
-  FPGA_BIT_HOME=$BIT_ROOT \
-  WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello/linux-hello.txt
-```
-
-`run_host` also supports `REMOTE`. Logs default to `build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log`:
-
-```sh
-XS_RELEASE_NAME=$(cat build/release/latest-xiangshan.name)
-BIT_TAG=xiangshan-YYYYmmdd-HHMMSS
-BIT_ROOT=/home/youkunlin/FpgaDiff-playground/bitstream/$BIT_TAG
-
 make run_host \
   REMOTE=fpga \
   REMOTE_DIR=/home/youkunlin/FpgaDiff-playground \
-  HOST_BIN=$BIT_ROOT/$XS_RELEASE_NAME/build/fpga-host \
-  HOST_ARGS="--diff /home/youkunlin/FpgaDiff-playground/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so -i /home/youkunlin/FpgaDiff-playground/ready-to-run/linux-hello/linux-hello.bin"
+  FPGA_BIT_HOME=$BIT_ROOT \
+  WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello \
+  DIFF=$REMOTE_ROOT/ready-to-run/riscv64-xs-ref-novec-nopmppma_defconfig/riscv64-nemu-interpreter-so
+```
+
+If you want to pin the host path explicitly:
+
+```sh
+make run_host \
+  REMOTE=fpga \
+  REMOTE_DIR=/home/youkunlin/FpgaDiff-playground \
+  HOST=$BIT_ROOT/<release-name>/build/fpga-host \
+  FPGA_BIT_HOME=$BIT_ROOT \
+  WORKLOAD=$REMOTE_ROOT/ready-to-run/linux-hello
 ```

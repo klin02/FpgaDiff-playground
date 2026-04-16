@@ -97,16 +97,22 @@ Common issues encountered during FPGA DiffTest and how to diagnose them.
 |-------|-------------|
 | CPU is stuck (not executing) | Check if XDMA packets are being received at all |
 | Workload build issue | Verify the `.bin` file size and content are correct |
-| DDR write failure | Confirm `write_jtag_ddr` completed successfully |
+| DDR write / reset sequence issue | Confirm which execution path you are using and verify the DDR load and reset steps in that path |
 | UART configuration mismatch | Check if the workload DTS matches the hardware |
 
 **Debugging Steps**:
 
-1. **Check if packets are being received**: Run `fpga-host` with verbose output or `DIFFTEST_QUERY` mode. If no packets arrive at all, the CPU is likely not running.
+1. **Check which path you are using**:
+   Host path: `make run_host ...`
+   UART/manual path: `stty -F /dev/ttyUSB0 ...` plus `halt_soc -> write_jtag_ddr -> reset_cpu`
 
-2. **Verify the DDR write succeeded**: Re-run `write_jtag_ddr` and check its output for errors. The JTAG write script should report the number of bytes written.
+2. **If you are using the host path, verify the DDR load step succeeded**: Check the `run_host` log for the `fpga-host` messages around `external DDR load command`. If needed, re-run `write_jtag_ddr` manually with `WORKLOAD=<workload-dir>` and check its output for errors. The JTAG write script should report the number of bytes written.
 
-3. **Verify the workload binary**: Check the file size is reasonable:
+3. **Both paths should begin with `reset_cpu` after `write_bitstream`**: If the board was not reset after flashing, later symptoms can look like DDR load or host issues even when the real problem is stale FPGA state.
+
+4. **If you are using the UART/manual path, verify the order**: Keep the UART terminal open, then run `halt_soc`, `write_jtag_ddr`, and `reset_cpu` in that order. If you skip `halt_soc` or reset too early, the CPU may run before DDR is fully initialized.
+
+5. **Verify the workload binary**: Check the file size is reasonable:
 
     ```sh
     ls -la ready-to-run/linux-hello/linux-hello.bin
@@ -114,19 +120,21 @@ Common issues encountered during FPGA DiffTest and how to diagnose them.
 
     For Linux workloads, the binary should be several megabytes. A very small file suggests a build failure.
 
-4. **Check the reset sequence**: Ensure `reset_cpu` was called after `write_jtag_ddr`:
+6. **Check the reset sequence**: `write_bitstream` is followed by an initial `reset_cpu` in both paths. After that:
+   Host path: `fpga-host` triggers `write_jtag_ddr` internally before it starts the run.
+   UART/manual path: a second `reset_cpu` should be called after `halt_soc` and `write_jtag_ddr`:
 
     ```sh
     make reset_cpu REMOTE=fpga REMOTE_DIR=$FPGA_ROOT FPGA_BIT_HOME=$BIT_ROOT
     ```
 
-5. **Try a simpler workload**: If a Linux workload hangs, try an AM bare-metal test to isolate the issue:
+7. **Try a simpler workload**: If a Linux workload hangs, try an AM bare-metal test to isolate the issue:
 
     ```sh
     make workload TARGET=am/hello
     ```
 
-6. **Verify UART configuration**: If the workload boots but produces no serial output, the DTS UART node may not match the hardware. See [workload.md](./workload.md) for UART configuration details.
+8. **Verify UART configuration**: If the workload boots but produces no serial output on the manual UART path, the DTS UART node may not match the hardware. See [workload.md](./workload.md) for UART configuration details.
 
 ## 4. Packets Received Correctly but DiffTest Comparison Fails
 

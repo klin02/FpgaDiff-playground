@@ -157,29 +157,24 @@ make write_bitstream \
   REMOTE_DIR=$FPGA_ROOT \
   FPGA_BIT_HOME=$BIT_ROOT
 
-make write_jtag_ddr \
-  REMOTE=fpga \
-  REMOTE_DIR=$FPGA_ROOT \
-  FPGA_BIT_HOME=$BIT_ROOT \
-  WORKLOAD=$FPGA_ROOT/ready-to-run/xiangshan-am-hello/xiangshan-am-hello.txt
-
 make reset_cpu \
   REMOTE=fpga \
   REMOTE_DIR=$FPGA_ROOT \
   FPGA_BIT_HOME=$BIT_ROOT
-```
 
-Run the host:
-
-```sh
 make run_host \
   REMOTE=fpga \
   REMOTE_DIR=$FPGA_ROOT \
-  HOST_BIN=$BIT_ROOT/$XS_RELEASE_NAME/build/fpga-host \
-  HOST_ARGS="--diff $FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so -i $FPGA_ROOT/ready-to-run/xiangshan-am-hello/xiangshan-am-hello.bin"
+  FPGA_BIT_HOME=$BIT_ROOT \
+  WORKLOAD=$FPGA_ROOT/ready-to-run/xiangshan-am-hello \
+  DIFF=$FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so
 ```
 
-In Copilot Local Mode, remote write and run steps should use the form `ssh "command" 2>&1 | tee log ; echo ""`. This applies to `make write_bitstream`, `make write_jtag_ddr`, `make reset_cpu`, and `make run_host`.
+`run_host` auto-finds `fpga-host` under `BIT_ROOT`, picks the `.bin` and `.txt` in the workload directory, and uses `DIFF` directly as the NEMU SO path. It then auto-generates `FPGA_DDR_LOAD_CMD`, so `fpga-host` runs `write_jtag_ddr` during init. This matches the direct `env-scripts/fpga_diff/README.md` flow, but keeps the top-level entry point in one place.
+
+If you want the old manual path for debugging, `make write_jtag_ddr ...` and `make reset_cpu ...` are still available.
+
+In Copilot Local Mode, remote write and run steps should use the form `ssh "command" 2>&1 | tee log ; echo ""`. This applies to `make write_bitstream`, `make reset_cpu`, and `make run_host`. Add `make write_jtag_ddr` only when using the manual debug path.
 
 Logs are written locally by default:
 

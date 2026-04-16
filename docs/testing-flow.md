@@ -15,12 +15,14 @@ This document describes the end-to-end FPGA DiffTest pipeline. Each stage corres
                            ▼
                      (sync to FPGA host)
                            │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        write_bitstream  write_jtag_ddr  reset_cpu
-                                        │
-                                        ▼
-                                     run_host
+             write_bitstream & reset_cpu
+                           │
+              ┌────────────┴────────────────┐
+              ▼                             ▼
+           run_host                    UART/manual
+              │                             |
+     `fpga-host` runs with            (stty,halt_soc,
+    external `FPGA_DDR_LOAD_CMD`   write_jtag_ddr,reset_cpu)
 ```
 
 ## Stage 1: Generate Verilog
@@ -100,7 +102,7 @@ Key parameters:
 |----------|---------|-------------|
 | `REMOTE` | (none) | Remote host for Vivado execution |
 | `REMOTE_DIR` | (none) | Repository path on the remote host |
-| `REMOTE_ENV` | (none) | Environment setup command on the remote host |
+| `REMOTE_ENV` | `source ~/.bash_profile &&` | Environment setup command on the remote host |
 | `BIT_SRC_DIR` | latest release | Override the release directory used for synthesis |
 
 Output:
@@ -165,7 +167,7 @@ rsync -a --delete ready-to-run/ fpga:$FPGA_ROOT/ready-to-run/
 
 All FPGA operation targets support `REMOTE=` for remote execution.
 
-### Write Bitstream
+### Common Preparation: Write Bitstream
 
 ```sh
 make write_bitstream \
@@ -173,34 +175,68 @@ make write_bitstream \
   FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
 ```
 
-### Write DDR via JTAG
+After that, choose one of the following run modes. Both paths start with `reset_cpu`.
 
-```sh
-make write_jtag_ddr \
-  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
-  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG \
-  DDR_WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello/linux-hello.txt
-```
+### Path A: Let Host Trigger `write_jtag_ddr`
 
-### Reset CPU
+Diff mode:
 
 ```sh
 make reset_cpu \
   REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
   FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
-```
 
-### Run Host
-
-```sh
 make run_host \
   REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
-  HOST_BIN=$FPGA_ROOT/bitstream/$BIT_TAG/$XS_RELEASE_NAME/build/fpga-host \
-  HOST_ARGS="--diff $FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so \
-             -i $FPGA_ROOT/ready-to-run/linux-hello/linux-hello.bin"
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG \
+  WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello \
+  DIFF=$FPGA_ROOT/ready-to-run/$NEMU_CONFIG/riscv64-nemu-interpreter-so
 ```
 
-Runtime log: `$FPGA_ROOT/build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log`
+No-diff mode:
+
+```sh
+make reset_cpu \
+  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
+
+make run_host \
+  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG \
+  WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello
+```
+
+In this path, `run_host` passes a `write_jtag_ddr` command into `fpga-host` through `FPGA_DDR_LOAD_CMD`. `WORKLOAD` is a directory; `run_host` picks the `.bin` and `.txt` inside it. Runtime log: `$FPGA_ROOT/build/run-log/run-YYYYmmdd-HHMMSS-NNNNNNNNN.log`
+
+### Path B: UART + Manual JTAG DDR Load
+
+Open UART in one terminal:
+
+```sh
+make reset_cpu \
+  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
+
+stty -F /dev/ttyUSB0 raw 115200
+```
+
+Then, in another terminal, stop the SoC, write DDR, and release reset in order:
+
+```sh
+make -C env-scripts/fpga_diff halt_soc \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
+
+make write_jtag_ddr \
+  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG \
+  WORKLOAD=$FPGA_ROOT/ready-to-run/linux-hello
+
+make reset_cpu \
+  REMOTE=fpga REMOTE_DIR=$FPGA_ROOT \
+  FPGA_BIT_HOME=$FPGA_ROOT/bitstream/$BIT_TAG
+```
+
+Use this path when you want serial output directly from the board without starting `fpga-host`, or when you want to isolate DDR load / reset issues from host-side DiffTest. The first `reset_cpu` is the shared post-bitstream reset; the final `reset_cpu` releases the CPU after manual DDR load.
 
 ## Next Steps
 

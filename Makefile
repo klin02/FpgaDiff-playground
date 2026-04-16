@@ -135,8 +135,8 @@ BIN2DDR_ARGS ?=
 AM_ARCH ?= $(if $(filter nutshell,$(DESIGN)),riscv64-nutshell,riscv64-xs)
 AM_CPPFLAGS  ?= -DUART16550=1
 
-HOST_BIN ?= $(if $(FPGA_HOST_HOME),$(FPGA_HOST_HOME)/build/fpga-host,)
-HOST_ARGS ?=
+HOST ?=
+DIFF ?=
 RUN_LOG ?= $(BUILD_DIR)/run-log/run-$$(date +%Y%m%d-%H%M%S).log
 
 .PHONY: help init link_difftest clean verilog release host bit write_bitstream \
@@ -154,8 +154,12 @@ help:
 	@printf '%s\n' '  make workload xiangshan TARGET=am/hello  build workload and generate ready-to-run/<design>-<target>'
 	@printf '%s\n' '  make nemu                         build NEMU ref so into ready-to-run/<NEMU_CONFIG>/'
 	@printf '%s\n' '  make write_bitstream FPGA_BIT_HOME=...'
-	@printf '%s\n' '  make write_jtag_ddr FPGA_BIT_HOME=... WORKLOAD=...'
+	@printf '%s\n' '  make write_jtag_ddr FPGA_BIT_HOME=... WORKLOAD=<workload-dir>   # manual / debug path'
 	@printf '%s\n' '  make reset_cpu FPGA_BIT_HOME=...'
+	@printf '%s\n' '  make run_host FPGA_BIT_HOME=... WORKLOAD=<workload-dir> [HOST=...] [DIFF=/path/to/nemu-so]'
+	@printf '%s\n' ''
+	@printf '%s\n' 'run_host auto-finds fpga-host under FPGA_BIT_HOME and .bin/.txt under WORKLOAD.'
+	@printf '%s\n' 'Set DIFF=/path/to/nemu-so for diff mode; leave DIFF empty for --no-diff.'
 	@printf '%s\n' ''
 	@printf '%s\n' 'Remote Vivado/FPGA: add REMOTE=user@host REMOTE_DIR=/path/to/FpgaDiff-playground.'
 
@@ -265,7 +269,9 @@ write_bitstream:
 write_jtag_ddr:
 	$(call require_var,FPGA_BIT_HOME)
 	$(call require_var,WORKLOAD)
-	$(call remote,$(MAKE) -C $(FPGA_DIFF_HOME) write_jtag_ddr FPGA_BIT_HOME=$(call abs_path,$(FPGA_BIT_HOME)) WORKLOAD=$(call abs_path,$(WORKLOAD)))
+	$(call remote,workload=$(call abs_path,$(WORKLOAD)); \
+		test -d "$$workload" && workload=$$(echo "$$workload"/*.txt) || true; \
+		$(MAKE) -C $(FPGA_DIFF_HOME) write_jtag_ddr FPGA_BIT_HOME=$(call abs_path,$(FPGA_BIT_HOME)) WORKLOAD="$$workload")
 
 reset_cpu:
 	$(call require_var,FPGA_BIT_HOME)
@@ -301,11 +307,28 @@ nemu:
 	echo "NEMU ref so copied to $(NEMU_OUT_SO)" | tee -a $(NEMU_LOG)
 
 run_host:
-	$(call require_var,HOST_ARGS)
+	$(call require_var,FPGA_BIT_HOME)
+	$(call require_var,WORKLOAD)
 	run_log="$(RUN_LOG)"; mkdir -p "$$(dirname "$$run_log")"
 	set -o pipefail; \
 	run_log="$(RUN_LOG)"; \
-	$(call remote,$(HOST_BIN) $(HOST_ARGS)) 2>&1 | tee "$$run_log"
+	{ $(call remote, \
+		fpga_bit_home=$(call abs_path,$(FPGA_BIT_HOME)); \
+		workload_home=$(call abs_path,$(WORKLOAD)); \
+		workload_bin=$$(echo "$$workload_home"/*.bin); \
+		workload_txt=$$(echo "$$workload_home"/*.txt); \
+		host=$(if $(strip $(HOST)),$(call abs_path,$(HOST)),); \
+		test -n "$$host" || host=$$(echo "$$fpga_bit_home"/*/build/fpga-host); \
+		printf -v ddr_load_cmd "%q %q %q" bash -lc "\
+			$(REMOTE_ENV) \
+			$(MAKE) -C $(FPGA_DIFF_HOME) write_jtag_ddr \
+			FPGA_BIT_HOME=$$fpga_bit_home \
+			WORKLOAD=$$workload_txt"; \
+		if [ -n "$(DIFF)" ]; then \
+			FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --diff "$(call abs_path,$(DIFF))" -i "$$workload_bin"; \
+		else \
+			FPGA_DDR_LOAD_CMD="$$ddr_load_cmd" "$$host" --no-diff; \
+		fi); } 2>&1 | tee "$$run_log"
 
 xiangshan nutshell xs nut:
 	@:
